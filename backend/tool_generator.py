@@ -1,5 +1,5 @@
 from typing import Any
-
+from backend.nvidia_service import generate_tool_description
 from backend.mcp_schema import MCPTool
 
 
@@ -45,10 +45,7 @@ def generate_tool(function: dict[str, Any]) -> MCPTool:
         "required": required,
     }
 
-    description = (
-        function["docstring"]
-        or f"Execute the {function['name']} function."
-    )
+    description = generate_tool_description(function)
 
     return MCPTool(
         name=function["name"],
