@@ -1,8 +1,9 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 from backend.tool_generator import generate_tool
-
+from backend.analyzers.java_analyzer import analyze_java_code
 from backend.analyzers.python_analyzer import analyze_python_code
+from backend.language_detector import detect_language
 
 
 app = FastAPI(title="MCP Forge")
@@ -10,7 +11,7 @@ app = FastAPI(title="MCP Forge")
 
 class CodeRequest(BaseModel):
     code: str
-
+    language: str | None = None
 
 @app.get("/")
 def root():
@@ -21,7 +22,12 @@ def root():
 
 @app.post("/analyze")
 def analyze_code(request: CodeRequest):
-    analysis = analyze_python_code(request.code)
+    language = request.language or detect_language(request.code)
+
+    if language.lower() == "java":
+        analysis = analyze_java_code(request.code)
+    else:
+        analysis = analyze_python_code(request.code)
 
     if not analysis["success"]:
         return analysis
