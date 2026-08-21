@@ -30,3 +30,28 @@ class ExecutionService:
         """Execute a loaded tool."""
 
         return self.executor.execute(tool_name, arguments)
+
+    def execute_function(self, function: object, arguments: dict[str, Any]) -> Any:
+        """Execute an already-loaded function."""
+
+        if not callable(function):
+            raise ValueError("Registered tool is not executable.")
+
+        try:
+            return function(**arguments)
+        except TypeError as error:
+            raise ValueError(
+                f"Invalid arguments: {error}"
+            ) from error
+        except Exception as error:
+            raise RuntimeError(
+                f"Tool failed during execution: {error}"
+            ) from error
+    def execute_registered_function(
+        self,
+        function: object,
+        arguments: dict[str, Any]
+    ) -> Any:
+        """Execute a function already registered in the tool registry."""
+
+        return self.execute_function(function, arguments)

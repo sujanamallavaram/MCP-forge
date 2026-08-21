@@ -1,24 +1,43 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+
+
 from backend.tool_generator import generate_tool
 from backend.analyzers.java_analyzer import analyze_java_code
 from backend.analyzers.python_analyzer import analyze_python_code
 from backend.language_detector import detect_language
 from backend.execution_service import ExecutionService
 from backend.tool_registry import ToolRegistry
+from backend.mcp_server import mcp_server, register_mcp_tool
 
-
-app = FastAPI(title="MCP Forge")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    async with mcp_server.session_manager.run():
+        yield
+app = FastAPI(
+    title="MCP Forge",
+    lifespan=lifespan
+)
+app.mount(
+    "/mcp",
+    mcp_server.streamable_http_app(
+        streamable_http_path="/",
+        host="127.0.0.1"
+    )
+)
 tool_registry = ToolRegistry()
+
 
 class CodeRequest(BaseModel):
     code: str
     language: str | None = None
 
+
 class ExecuteRequest(BaseModel):
-    code: str
     tool_name: str
     arguments: dict = {}
+
 
 @app.get("/")
 def root():
@@ -39,18 +58,28 @@ def analyze_code(request: CodeRequest):
     if not analysis["success"]:
         return analysis
 
-    tools = [
-    generate_tool(function).model_dump()
-    for function in analysis["functions"]
-    ]
+    tools = []
 
-    for tool in tools:
-        tool_registry.register(tool)
+    for function in analysis["functions"]:
+        tool = generate_tool(function).model_dump()
+
+        executable_function = None
+
+        if language.lower() == "python":
+            from backend.function_loader import load_functions
+
+            loaded_functions = load_functions(request.code)
+            executable_function = loaded_functions.get(function["name"])
+
+        tool_registry.register(tool, executable_function)
+        register_mcp_tool(tool, executable_function)
+        tools.append(tool)
 
     return {
         "analysis": analysis,
         "tools": tools
     }
+
 
 @app.get("/tools")
 def list_tools():
@@ -58,15 +87,22 @@ def list_tools():
         "tools": tool_registry.get_all()
     }
 
+
 @app.post("/execute")
 def execute_tool(request: ExecuteRequest):
     service = ExecutionService()
 
-    try:
-        service.load_code(request.code)
+    function = tool_registry.get_function(request.tool_name)
 
-        result = service.execute(
-            request.tool_name,
+    if function is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Tool '{request.tool_name}' is not registered."
+        )
+
+    try:
+        result = service.execute_registered_function(
+            function,
             request.arguments
         )
 

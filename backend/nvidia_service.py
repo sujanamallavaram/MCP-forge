@@ -16,7 +16,10 @@ if not NVIDIA_API_KEY:
 client = OpenAI(
     base_url="https://integrate.api.nvidia.com/v1",
     api_key=NVIDIA_API_KEY,
+    timeout=15.0,
+    max_retries=0,
 )
+
 
 def ask_nvidia(prompt: str) -> str:
     """Send a prompt to NVIDIA Nemotron and return the response."""
@@ -34,6 +37,7 @@ def ask_nvidia(prompt: str) -> str:
     )
 
     return response.choices[0].message.content
+
 
 def generate_tool_description(function: dict) -> str:
     """Generate a concise MCP tool description using NVIDIA."""
@@ -57,4 +61,17 @@ Rules:
 - Keep it under 30 words.
 """
 
-    return ask_nvidia(prompt).strip()
+    try:
+        return ask_nvidia(prompt).strip()
+
+    except Exception as error:
+        print(f"NVIDIA unavailable, using fallback description: {error}")
+
+        docstring = (function.get("docstring") or "").strip()
+
+        if docstring:
+            return docstring
+
+        name = function["name"].replace("_", " ")
+
+        return f"Executes the {name} function."
